@@ -3,10 +3,9 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QGraphicsView, QGraphic
 from PySide6.QtGui import QPen, QPainter
 from PySide6.QtCore import Qt
 
-import geopandas as gpd
 from shapely.geometry import LineString, MultiLineString
 
-from data import paths  # Your function that returns GeoDataFrame in lat/lon (EPSG:4326)
+from data import paths
 
 class ZoomableGraphicsView(QGraphicsView):
     def wheelEvent(self, event):
@@ -43,7 +42,6 @@ class Plus15Map(QMainWindow):
         pen = QPen(Qt.darkRed)
         pen.setWidth(2)
 
-        # No scaling needed, projected coords are in meters
         min_x, min_y = float('inf'), float('inf')
         max_x, max_y = float('-inf'), float('-inf')
 
@@ -61,8 +59,6 @@ class Plus15Map(QMainWindow):
                     x1, y1 = coords[i]
                     x2, y2 = coords[i + 1]
 
-                    # Flip Y if needed (Qt coordinate system has Y down)
-                    # If you want north-up, flip Y:
                     y1s = -y1
                     y2s = -y2
                     x1s, x2s = x1, x2
@@ -76,7 +72,7 @@ class Plus15Map(QMainWindow):
                     line.setPen(pen)
                     self.scene.addItem(line)
 
-        padding = 100  # meters padding around shapes
+        padding = 100
         self.scene.setSceneRect(
             min_x - padding,
             min_y - padding,
@@ -91,12 +87,8 @@ class Plus15Map(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
-    gdf = paths()  # Your data in lat/lon (EPSG:4326)
-    print("Original CRS:", gdf.crs)
-
-    # Project to UTM Zone 11N (meters, suitable for Calgary area)
+    gdf = paths()
     gdf_projected = gdf.to_crs(epsg=32611)
-    print("Projected CRS:", gdf_projected.crs)
 
     window = Plus15Map(gdf_projected)
     window.show()
