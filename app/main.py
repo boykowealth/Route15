@@ -16,19 +16,16 @@ class ZoomableGraphicsView(QGraphicsView):
         super().__init__()
         self.scale(1, -1)
         
-        # Define Calgary bounds in EPSG:3857 (Web Mercator)
         self.bounds = QRectF(
-            -12700087.099057846,  # Left
-            6620354.958742279,    # Top (remember Y is flipped)
-            -12684934.17119011 - (-12700087.099057846),  # Width
-            6635328.924629 - 6620354.958742279           # Height
+            -12700087.099057846,
+            6620354.958742279,
+            -12684934.17119011 - (-12700087.099057846),
+            6635328.924629 - 6620354.958742279
         )
         
-        # Set minimum zoom level (maximum zoom out)
         self.min_zoom_level = 1.0
         self.current_zoom = 1.0
         
-        # User location indicator
         self.user_location_item = None
         self.user_accuracy_item = None
 
@@ -38,7 +35,6 @@ class ZoomableGraphicsView(QGraphicsView):
 
         old_pos = self.mapToScene(event.position().toPoint())
         
-        # Calculate new zoom level
         if event.angleDelta().y() > 0:
             new_zoom = self.current_zoom * zoom_in_factor
             zoom_factor = zoom_in_factor
@@ -46,7 +42,6 @@ class ZoomableGraphicsView(QGraphicsView):
             new_zoom = self.current_zoom * zoom_out_factor
             zoom_factor = zoom_out_factor
         
-        # Prevent zooming out beyond minimum level
         if new_zoom < self.min_zoom_level:
             return
         
@@ -57,7 +52,6 @@ class ZoomableGraphicsView(QGraphicsView):
         delta = new_pos - old_pos
         self.translate(delta.x(), delta.y())
         
-        # Constrain view to bounds after zooming
         self.constrain_to_bounds()
 
     def mousePressEvent(self, event):
@@ -66,43 +60,35 @@ class ZoomableGraphicsView(QGraphicsView):
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
-        # Constrain view to bounds during panning
         if self.dragMode() == QGraphicsView.ScrollHandDrag:
             self.constrain_to_bounds()
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
-        # Final constraint check after panning
         self.constrain_to_bounds()
 
     def constrain_to_bounds(self):
         """Constrain the view to stay within the defined bounds"""
-        # Get current visible scene rect
         visible_rect = self.mapToScene(self.viewport().rect()).boundingRect()
         
-        # Calculate how much we need to adjust
         dx = 0
         dy = 0
         
-        # Check horizontal bounds
         if visible_rect.left() < self.bounds.left():
             dx = self.bounds.left() - visible_rect.left()
         elif visible_rect.right() > self.bounds.right():
             dx = self.bounds.right() - visible_rect.right()
         
-        # Check vertical bounds
         if visible_rect.top() < self.bounds.top():
             dy = self.bounds.top() - visible_rect.top()
         elif visible_rect.bottom() > self.bounds.bottom():
             dy = self.bounds.bottom() - visible_rect.bottom()
-        
-        # Apply the adjustment
+
         if dx != 0 or dy != 0:
             self.translate(dx, dy)
 
     def set_initial_view(self):
         """Set the initial view to show the full bounds"""
-        # Add some padding to the bounds for better visualization
         padding = 100
         padded_bounds = QRectF(
             self.bounds.left() - padding,
@@ -110,24 +96,19 @@ class ZoomableGraphicsView(QGraphicsView):
             self.bounds.width() + 2 * padding,
             self.bounds.height() + 2 * padding
         )
-        
-        # Fit the view to the padded bounds
+
         self.fitInView(padded_bounds, Qt.KeepAspectRatio)
         
-        # Store the initial zoom level as minimum
         self.min_zoom_level = self.current_zoom = 1.0
 
     def update_user_location(self, x, y, accuracy=None):
         """Update user location on the map"""
-        # Remove existing location indicators
         if self.user_location_item:
             self.scene().removeItem(self.user_location_item)
         if self.user_accuracy_item:
             self.scene().removeItem(self.user_accuracy_item)
         
-        # Create accuracy circle if accuracy is provided
         if accuracy is not None:
-            # Convert accuracy from meters to map coordinates (rough approximation)
             radius = accuracy
             accuracy_pen = QPen(Qt.blue)
             accuracy_pen.setWidth(1)
@@ -142,7 +123,6 @@ class ZoomableGraphicsView(QGraphicsView):
             self.user_accuracy_item.setBrush(accuracy_brush)
             self.scene().addItem(self.user_accuracy_item)
         
-        # Create user location dot
         location_pen = QPen(Qt.white)
         location_pen.setWidth(2)
         location_brush = QBrush(Qt.blue)
@@ -154,7 +134,6 @@ class ZoomableGraphicsView(QGraphicsView):
 
     def lat_lon_to_web_mercator(self, lat, lon):
         """Convert latitude/longitude to Web Mercator (EPSG:3857)"""
-        # Web Mercator conversion
         x = lon * 20037508.34 / 180
         y = math.log(math.tan((90 + lat) * math.pi / 360)) / (math.pi / 180)
         y = y * 20037508.34 / 180
@@ -169,7 +148,6 @@ class PlanningPanel(QWidget):
     def init_ui(self):
         layout = QVBoxLayout()
         
-        # Header with close button
         header_layout = QHBoxLayout()
         
         title_label = QLabel("Route Planning")
@@ -196,7 +174,6 @@ class PlanningPanel(QWidget):
         header_layout.addStretch()
         header_layout.addWidget(close_button)
         
-        # Content area (placeholder for now)
         content_frame = QFrame()
         content_frame.setFrameStyle(QFrame.Box)
         content_frame.setStyleSheet("""
@@ -249,36 +226,28 @@ class Plus15Map(QMainWindow):
         self.setup_location_services()
 
     def init_ui(self):
-        # Create central widget and main layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # Create main layout
         self.main_layout = QVBoxLayout(central_widget)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(0)
         
-        # Create map view
         self.view = ZoomableGraphicsView()
         self.scene = QGraphicsScene()
         self.view.setScene(self.scene)
         
-        # Create splitter for map and planning panel
         self.splitter = QSplitter(Qt.Vertical)
         self.splitter.addWidget(self.view)
         
-        # Create planning panel (initially hidden)
         self.planning_panel = PlanningPanel(self)
         self.splitter.addWidget(self.planning_panel)
         self.planning_panel.hide()
         
-        # Set splitter proportions
         self.splitter.setSizes([600, 200])
         
-        # Add splitter to main layout
         self.main_layout.addWidget(self.splitter)
         
-        # Create floating + button
         self.create_floating_button()
 
     def create_floating_button(self):
@@ -303,7 +272,6 @@ class Plus15Map(QMainWindow):
         """)
         self.plus_button.clicked.connect(self.toggle_planning_mode)
         
-        # Create location button
         self.location_button = QPushButton("📍")
         self.location_button.setParent(self)
         self.location_button.setFixedSize(50, 50)
@@ -325,7 +293,6 @@ class Plus15Map(QMainWindow):
         """)
         self.location_button.clicked.connect(self.toggle_location_tracking)
         
-        # Position buttons
         self.position_floating_buttons()
 
     def position_floating_buttons(self):
@@ -333,12 +300,10 @@ class Plus15Map(QMainWindow):
         margin = 20
         button_spacing = 60
         
-        # Position plus button
         plus_x = self.width() - self.plus_button.width() - margin
         plus_y = self.height() - self.plus_button.height() - margin
         self.plus_button.move(plus_x, plus_y)
         
-        # Position location button above plus button
         location_x = self.width() - self.location_button.width() - margin
         location_y = plus_y - button_spacing
         self.location_button.move(location_x, location_y)
@@ -351,7 +316,6 @@ class Plus15Map(QMainWindow):
         self.planning_mode = not self.planning_mode
         
         if self.planning_mode:
-            # Show planning panel
             self.planning_panel.show()
             self.plus_button.setText("−")
             self.plus_button.setStyleSheet("""
@@ -371,7 +335,6 @@ class Plus15Map(QMainWindow):
                 }
             """)
         else:
-            # Hide planning panel
             self.planning_panel.hide()
             self.plus_button.setText("+")
             self.plus_button.setStyleSheet("""
@@ -394,14 +357,11 @@ class Plus15Map(QMainWindow):
     def setup_map(self):
         self.tile_layer = TileLayer(self.scene, tiles_root="tiles_cartodb_positron")
         
-        # Set up the scene with Calgary bounds
         self.setup_scene_bounds()
         self.draw_lines(self.gdf)
-        
-        # Set initial view to show the full Calgary area
+
         self.view.set_initial_view()
         
-        # Update tiles after setting the view
         self.update_tiles()
 
         self.view.setRenderHint(QPainter.Antialiasing)
@@ -410,7 +370,6 @@ class Plus15Map(QMainWindow):
 
     def setup_scene_bounds(self):
         """Set up the scene rectangle to match Calgary bounds"""
-        # Use the same bounds as defined in the view
         bounds = self.view.bounds
         padding = 500
         
@@ -475,8 +434,7 @@ class Plus15Map(QMainWindow):
             """)
             return
         
-        # Configure location source
-        self.location_source.setUpdateInterval(5000)  # Update every 5 seconds
+        self.location_source.setUpdateInterval(5000)
         self.location_source.positionUpdated.connect(self.on_position_updated)
         self.location_source.errorOccurred.connect(self.on_location_error)
         
@@ -490,7 +448,6 @@ class Plus15Map(QMainWindow):
             return
         
         if not self.location_enabled:
-            # Start location tracking
             self.location_source.startUpdates()
             self.location_enabled = True
             self.location_button.setStyleSheet("""
@@ -511,11 +468,9 @@ class Plus15Map(QMainWindow):
             """)
             print("Location tracking started")
         else:
-            # Stop location tracking
             self.location_source.stopUpdates()
             self.location_enabled = False
             
-            # Remove location indicators
             if self.view.user_location_item:
                 self.scene.removeItem(self.view.user_location_item)
                 self.view.user_location_item = None
