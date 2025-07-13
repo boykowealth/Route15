@@ -75,19 +75,18 @@ TILE_PROVIDERS = {
 SELECTED_PROVIDER = "cartodb_positron" 
 
 TILE_URL = TILE_PROVIDERS[SELECTED_PROVIDER]["url"]
-TILES_DIR = f"tiles_{SELECTED_PROVIDER}"  # Different folder for each provider
+TILES_DIR = f"tiles_{SELECTED_PROVIDER}"
 
 def download_tile(z, x, y):
     url = TILE_URL.format(z=z, x=x, y=y)
     out_dir = os.path.join(TILES_DIR, str(z), str(x))
     os.makedirs(out_dir, exist_ok=True)
     
-    # Handle different file extensions
     extension = ".jpg" if "watercolor" in SELECTED_PROVIDER else ".png"
     out_path = os.path.join(out_dir, f"{y}{extension}")
 
     if os.path.exists(out_path):
-        return  # Skip already downloaded
+        return 
 
     headers = {
         "User-Agent": "Plus15Map/1.0 (braydenboyko@boykowealth.com)",
@@ -108,12 +107,10 @@ def main():
     print(f"Tiles will be saved to: {TILES_DIR}")
     print(f"Attribution: {TILE_PROVIDERS[SELECTED_PROVIDER]['attribution']}")
     
-    # Get center tile
     center_tile = mercantile.tile(LON, LAT, ZOOM)
     print(f"Center tile at zoom {ZOOM}: x={center_tile.x}, y={center_tile.y}")
 
-    # Define how many tiles to download around center
-    radius = 3  # downloads a 7x7 tile square
+    radius = 3 
 
     x_start = center_tile.x - radius
     x_end = center_tile.x + radius

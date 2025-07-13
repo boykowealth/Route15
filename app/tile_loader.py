@@ -6,7 +6,6 @@ from pyproj import Transformer
 
 TILE_SIZE = 256
 
-# Transformer from Web Mercator (EPSG:3857) to WGS84 (EPSG:4326)
 transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
 
 class TileLayer:
@@ -24,13 +23,9 @@ class TileLayer:
         top_m = rect.top()
         bottom_m = rect.bottom()
 
-        # Since the view Y-axis is flipped, we need to handle this carefully
-        # In screen coordinates: top_m is actually the higher Y value (north)
-        # but in geographic coordinates: higher Y should be north
         min_y = min(top_m, bottom_m)
         max_y = max(top_m, bottom_m)
 
-        # Convert to lat/lon for mercantile
         left_lon, south_lat = transformer.transform(left_m, min_y)
         right_lon, north_lat = transformer.transform(right_m, max_y)
 
@@ -48,20 +43,17 @@ class TileLayer:
 
             pixmap = self.load_tile_from_disk(tile)
             if pixmap is None:
-                # Uncomment below if you want to debug missing tiles
-                # print(f"Missing tile: {self.get_tile_path(tile)}")
                 continue
 
             bounds = mercantile.xy_bounds(tile)
             x = bounds.left
-            y = bounds.top  # Use top for positioning
+            y = bounds.top 
             width = bounds.right - bounds.left
             height = bounds.top - bounds.bottom
 
             item = QGraphicsPixmapItem(pixmap)
-            # Scale and flip the tile vertically to match the flipped view
-            item.setScale(width / self.tile_size)  # Use configurable tile size
-            item.setTransform(item.transform().scale(1, -1))  # Flip vertically
+            item.setScale(width / self.tile_size) 
+            item.setTransform(item.transform().scale(1, -1))
             item.setPos(x, y)
             item.setZValue(-10)
             self.scene.addItem(item)
@@ -70,7 +62,6 @@ class TileLayer:
         print(f"Loaded {len(self.tiles)} tiles")
 
     def get_tile_path(self, tile):
-        # Try both .png and .jpg extensions
         png_path = os.path.join(self.tiles_root, str(tile.z), str(tile.x), f"{tile.y}.png")
         jpg_path = os.path.join(self.tiles_root, str(tile.z), str(tile.x), f"{tile.y}.jpg")
         
@@ -79,7 +70,7 @@ class TileLayer:
         elif os.path.exists(jpg_path):
             return jpg_path
         else:
-            return png_path  # Return png as default for error reporting
+            return png_path 
 
     def load_tile_from_disk(self, tile):
         path = self.get_tile_path(tile)
