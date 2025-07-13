@@ -11,7 +11,6 @@ from tile_loader import TileLayer
 class ZoomableGraphicsView(QGraphicsView):
     def __init__(self):
         super().__init__()
-        # Flip the Y axis here so scene Y increases upward (like EPSG:3857)
         self.scale(1, -1)
 
     def wheelEvent(self, event):
@@ -30,14 +29,14 @@ class Plus15Map(QMainWindow):
     def __init__(self, gdf):
         super().__init__()
         self.setWindowTitle("Calgary +15 Map (Local Tiles, Flipped Y)")
-        self.resize(1000, 800)
+        self.resize(400, 750)
 
         self.view = ZoomableGraphicsView()
         self.scene = QGraphicsScene()
         self.view.setScene(self.scene)
         self.setCentralWidget(self.view)
 
-        self.tile_layer = TileLayer(self.scene, tiles_root="tiles")
+        self.tile_layer = TileLayer(self.scene, tiles_root="tiles_cartodb_positron")
 
         self.draw_lines(gdf)
         self.update_tiles()
@@ -67,7 +66,6 @@ class Plus15Map(QMainWindow):
                     x1, y1 = coords[i]
                     x2, y2 = coords[i + 1]
 
-                    # Use coordinates directly (no Y flip)
                     x1s, y1s = x1, y1
                     x2s, y2s = x2, y2
 
@@ -104,7 +102,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     gdf = paths()
-    gdf_projected = gdf.to_crs(epsg=3857)  # Web Mercator EPSG:3857
+    gdf_projected = gdf.to_crs(epsg=3857)
 
     window = Plus15Map(gdf_projected)
     window.show()
