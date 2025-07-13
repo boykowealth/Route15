@@ -2,14 +2,86 @@ import sys
 import math
 from PySide6.QtWidgets import (QApplication, QMainWindow, QGraphicsView, QGraphicsScene, 
                                QGraphicsLineItem, QGraphicsEllipseItem, QWidget, QVBoxLayout, QHBoxLayout, 
-                               QPushButton, QSplitter, QLabel, QFrame, QMessageBox)
-from PySide6.QtGui import QPen, QPainter, QIcon, QFont, QBrush
-from PySide6.QtCore import Qt, QEvent, QSize, QRectF, QTimer
+                               QPushButton, QSplitter, QLabel, QFrame, QMessageBox, QCheckBox, QScrollArea,
+                               QGraphicsTextItem)
+from PySide6.QtGui import QPen, QPainter, QIcon, QFont, QBrush, QColor
+from PySide6.QtCore import Qt, QEvent, QSize, QRectF, QTimer, QPointF
 from PySide6.QtPositioning import QGeoPositionInfoSource, QGeoPositionInfo
 
-from shapely.geometry import LineString, MultiLineString
-from data import paths
+from shapely.geometry import LineString, MultiLineString, Point
+from data import paths, businessData
 from tile_loader import TileLayer
+
+class BusinessPointItem(QGraphicsEllipseItem):
+    """Custom graphics item for business points with hover effects"""
+    def __init__(self, x, y, business_info, radius=4):
+        super().__init__(x - radius, y - radius, radius * 2, radius * 2)
+        self.business_info = business_info
+        self.radius = radius
+        self.center_x = x
+        self.center_y = y
+        
+        # Default appearance
+        self.setPen(QPen(Qt.darkBlue, 1))
+        self.setBrush(QBrush(Qt.blue))
+        
+        # Enable hover events
+        self.setAcceptHoverEvents(True)
+        
+        # Text item for business name (initially hidden)
+        self.text_item = None
+        
+    def hoverEnterEvent(self, event):
+        """Show business name and highlight on hover"""
+        # Enlarge and change color
+        self.setPen(QPen(Qt.darkRed, 2))
+        self.setBrush(QBrush(Qt.red))
+        
+        # Create text item if it doesn't exist
+        if not self.text_item:
+            self.text_item = QGraphicsTextItem(self.business_info.get('tradename', 'Unknown Business'))
+            self.text_item.setFont(QFont("Arial", 8))
+            self.text_item.setDefaultTextColor(Qt.black)
+            
+            # Position text above the point
+            text_rect = self.text_item.boundingRect()
+            self.text_item.setPos(
+                self.center_x - text_rect.width() / 2,
+                self.center_y - self.radius - text_rect.height() - 5
+            )
+            
+            # Add background rectangle for better readability
+            bg_rect = QGraphicsEllipseItem(
+                self.text_item.x() - 5,
+                self.text_item.y() - 2,
+                text_rect.width() + 10,
+                text_rect.height() + 4
+            )
+            bg_rect.setBrush(QBrush(QColor(255, 255, 255, 200)))
+            bg_rect.setPen(QPen(Qt.gray, 1))
+            
+            self.scene().addItem(bg_rect)
+            self.scene().addItem(self.text_item)
+            
+            # Store reference to background for cleanup
+            self.bg_rect = bg_rect
+        
+        super().hoverEnterEvent(event)
+    
+    def hoverLeaveEvent(self, event):
+        """Hide business name and return to normal appearance"""
+        # Return to normal appearance
+        self.setPen(QPen(Qt.darkBlue, 1))
+        self.setBrush(QBrush(Qt.blue))
+        
+        # Remove text item
+        if self.text_item:
+            self.scene().removeItem(self.text_item)
+            self.scene().removeItem(self.bg_rect)
+            self.text_item = None
+            self.bg_rect = None
+        
+        super().hoverLeaveEvent(event)
 
 class ZoomableGraphicsView(QGraphicsView):
     def __init__(self):
@@ -28,6 +100,9 @@ class ZoomableGraphicsView(QGraphicsView):
         
         self.user_location_item = None
         self.user_accuracy_item = None
+        
+        # Store business items for toggling visibility
+        self.business_items = []
 
     def wheelEvent(self, event):
         zoom_in_factor = 1.25
@@ -139,6 +214,11 @@ class ZoomableGraphicsView(QGraphicsView):
         y = y * 20037508.34 / 180
         return x, y
 
+    def toggle_business_visibility(self, visible):
+        """Toggle visibility of business points"""
+        for item in self.business_items:
+            item.setVisible(visible)
+
 class PlanningPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -174,6 +254,11 @@ class PlanningPanel(QWidget):
         header_layout.addStretch()
         header_layout.addWidget(close_button)
         
+        # Add business toggle checkbox
+        self.business_checkbox = QCheckBox("Show Business Locations")
+        self.business_checkbox.setChecked(True)
+        self.business_checkbox.stateChanged.connect(self.toggle_business_points)
+        
         content_frame = QFrame()
         content_frame.setFrameStyle(QFrame.Box)
         content_frame.setStyleSheet("""
@@ -186,7 +271,9 @@ class PlanningPanel(QWidget):
         """)
         
         content_layout = QVBoxLayout()
-        placeholder_label = QLabel("Planning tools will go here...")
+        content_layout.addWidget(self.business_checkbox)
+        
+        placeholder_label = QLabel("Additional planning tools will go here...")
         placeholder_label.setAlignment(Qt.AlignCenter)
         placeholder_label.setStyleSheet("color: #6c757d; font-size: 14px;")
         content_layout.addWidget(placeholder_label)
@@ -204,18 +291,27 @@ class PlanningPanel(QWidget):
             }
         """)
 
+    def toggle_business_points(self, state):
+        """Toggle business points visibility from planning panel"""
+        self.parent_window.business_visible = (state == Qt.Checked)
+        if self.parent_window:
+            self.parent_window.view.toggle_business_visibility(state == Qt.Checked)
+            # Update the floating button appearance
+            self.parent_window.toggle_business_visibility()
+
     def close_planning_mode(self):
         if self.parent_window:
             self.parent_window.toggle_planning_mode()
 
 class Plus15Map(QMainWindow):
-    def __init__(self, gdf):
+    def __init__(self, gdf, business_df):
         super().__init__()
         self.setWindowTitle("Calgary +15 Map")
         self.resize(400, 750)
         
         self.planning_mode = False
         self.gdf = gdf
+        self.business_df = business_df
         
         # Location services
         self.location_source = None
@@ -293,6 +389,29 @@ class Plus15Map(QMainWindow):
         """)
         self.location_button.clicked.connect(self.toggle_location_tracking)
         
+        # Add business toggle button
+        self.business_button = QPushButton("🏢")
+        self.business_button.setParent(self)
+        self.business_button.setFixedSize(50, 50)
+        self.business_visible = True  # Track business visibility state
+        self.business_button.setStyleSheet("""
+            QPushButton {
+                background-color: #6f42c1;
+                color: white;
+                border: none;
+                border-radius: 25px;
+                font-size: 20px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #5a2d91;
+            }
+            QPushButton:pressed {
+                background-color: #4c1d7a;
+            }
+        """)
+        self.business_button.clicked.connect(self.toggle_business_visibility)
+        
         self.position_floating_buttons()
 
     def position_floating_buttons(self):
@@ -307,12 +426,97 @@ class Plus15Map(QMainWindow):
         location_x = self.width() - self.location_button.width() - margin
         location_y = plus_y - button_spacing
         self.location_button.move(location_x, location_y)
+        
+        business_x = self.width() - self.business_button.width() - margin
+        business_y = location_y - button_spacing
+        self.business_button.move(business_x, business_y)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.position_floating_buttons()
 
+    def toggle_business_visibility(self):
+        """Toggle business points visibility from the floating button"""
+        self.business_visible = not self.business_visible
+        self.view.toggle_business_visibility(self.business_visible)
+        
+        # Update button appearance based on state
+        if self.business_visible:
+            self.business_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #6f42c1;
+                    color: white;
+                    border: none;
+                    border-radius: 25px;
+                    font-size: 20px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #5a2d91;
+                }
+                QPushButton:pressed {
+                    background-color: #4c1d7a;
+                }
+            """)
+        else:
+            self.business_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #6c757d;
+                    color: white;
+                    border: none;
+                    border-radius: 25px;
+                    font-size: 20px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #5a6268;
+                }
+                QPushButton:pressed {
+                    background-color: #4e555b;
+                }
+            """)
+        
     def toggle_planning_mode(self):
+        self.planning_mode = not self.planning_mode
+        
+        if self.planning_mode:
+            self.planning_panel.show()
+            self.plus_button.setText("−")
+            self.plus_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #dc3545;
+                    color: white;
+                    border: none;
+                    border-radius: 25px;
+                    font-size: 24px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #c82333;
+                }
+                QPushButton:pressed {
+                    background-color: #bd2130;
+                }
+            """)
+        else:
+            self.planning_panel.hide()
+            self.plus_button.setText("+")
+            self.plus_button.setStyleSheet("""
+                QPushButton {
+                    background-color: #007bff;
+                    color: white;
+                    border: none;
+                    border-radius: 25px;
+                    font-size: 24px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #0056b3;
+                }
+                QPushButton:pressed {
+                    background-color: #004085;
+                }
+            """)
         self.planning_mode = not self.planning_mode
         
         if self.planning_mode:
@@ -359,6 +563,7 @@ class Plus15Map(QMainWindow):
         
         self.setup_scene_bounds()
         self.draw_lines(self.gdf)
+        self.draw_business_points(self.business_df)
 
         self.view.set_initial_view()
         
@@ -405,6 +610,45 @@ class Plus15Map(QMainWindow):
                     line_item = QGraphicsLineItem(x1, y1, x2, y2)
                     line_item.setPen(pen)
                     self.scene.addItem(line_item)
+
+    def draw_business_points(self, business_df):
+        """Draw business points on the map"""
+        print(f"Drawing {len(business_df)} business points...")
+        
+        for idx, row in business_df.iterrows():
+            try:
+                # Extract geometry from the point column
+                point_geom = row['point']
+                
+                if isinstance(point_geom, Point):
+                    # Get coordinates
+                    lon, lat = point_geom.x, point_geom.y
+                    
+                    # Convert to Web Mercator
+                    x, y = self.view.lat_lon_to_web_mercator(lat, lon)
+                    
+                    # Create business info dictionary
+                    business_info = {
+                        'busid': row.get('busid', 'N/A'),
+                        'tradename': row.get('tradename', 'Unknown Business'),
+                        'homeoccind': row.get('homeoccind', 'N/A'),
+                        'jobstatusdesc': row.get('jobstatusdesc', 'N/A'),
+                        'lat': lat,
+                        'lon': lon
+                    }
+                    
+                    # Create business point item
+                    business_item = BusinessPointItem(x, y, business_info)
+                    
+                    # Add to scene and store reference
+                    self.scene.addItem(business_item)
+                    self.view.business_items.append(business_item)
+                    
+            except Exception as e:
+                print(f"Error processing business point {idx}: {e}")
+                continue
+        
+        print(f"Successfully added {len(self.view.business_items)} business points to map")
 
     def update_tiles(self):
         zoom_level = 15
@@ -503,15 +747,12 @@ class Plus15Map(QMainWindow):
             lat = coordinate.latitude()
             lon = coordinate.longitude()
             
-            # Convert to Web Mercator
             x, y = self.view.lat_lon_to_web_mercator(lat, lon)
             
-            # Get accuracy if available
             accuracy = None
             if position_info.hasAttribute(QGeoPositionInfo.HorizontalAccuracy):
                 accuracy = position_info.attribute(QGeoPositionInfo.HorizontalAccuracy)
             
-            # Update location on map
             self.view.update_user_location(x, y, accuracy)
             
             print(f"Location updated: {lat:.6f}, {lon:.6f} (accuracy: {accuracy}m)")
@@ -535,9 +776,12 @@ class Plus15Map(QMainWindow):
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
+    # Load both datasets
     gdf = paths()
     gdf_projected = gdf.to_crs(epsg=3857)
-
-    window = Plus15Map(gdf_projected)
+    
+    business_df = businessData()
+    
+    window = Plus15Map(gdf_projected, business_df)
     window.show()
     sys.exit(app.exec())

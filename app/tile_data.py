@@ -2,7 +2,6 @@ import os
 import requests
 import mercantile
 
-
 LAT = 51.0469
 LON = -114.0658
 ZOOM = 18 
